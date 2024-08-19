@@ -1,15 +1,21 @@
-package ru.otus.june.chat.server;
+package ru.otus.sotnikova.june.chat.server;
 
+import ru.otus.sotnikova.june.chat.server.authenticator.AuthenticationProvider;
+import ru.otus.sotnikova.june.chat.server.authenticator.PersistentAuthenticationProvider;
+
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class Server {
     private int port;
     private List<ClientHandler> clients;
     private AuthenticationProvider authenticationProvider;
+    private boolean receivedShutdown = false;
 
     public AuthenticationProvider getAuthenticationProvider() {
         return authenticationProvider;
@@ -18,20 +24,39 @@ public class Server {
     public Server(int port) {
         this.port = port;
         this.clients = new ArrayList<>();
-        this.authenticationProvider = new InMemoryAuthenticationProvider(this);
+        //this.authenticationProvider = new InMemoryAuthenticationProvider(this);
+        this.authenticationProvider = new PersistentAuthenticationProvider(this);
+    }
+
+    public List<String> getUserNames() {
+        return this.clients.stream().map(ClientHandler::getUsername).collect(Collectors.toList());
     }
 
     public void start() {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             System.out.println("Сервер запущен на порту: " + port);
+            serverSocket.setSoTimeout(1_200_000);
             authenticationProvider.initialize();
-            while (true) {
+            while (!receivedShutdown) {
                 Socket socket = serverSocket.accept();
-                new ClientHandler(this, socket);
+                socket.setSoTimeout(1_200_000);
+                ClientHandler handler = new ClientHandler(this, socket);
+                handler.handle();
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    public synchronized void disconnectAndBan(String userName) {
+        this.kickUser(userName);
+        authenticationProvider.ban(userName);
+    }
+
+    public synchronized void shutdown() {
+        broadcastMessage("Сервер будет остановлен");
+        new ArrayList<>(clients).forEach(ClientHandler::disconnect);
+        this.receivedShutdown = true;
     }
 
     public synchronized void subscribe(ClientHandler clientHandler) {
@@ -73,5 +98,14 @@ public class Server {
             }
         }
         return false;
+    }
+
+    public void changeNickIfValid(ClientHandler clientHandler, String newUserName) {
+        if (isUsernameBusy(newUserName))
+            sendDirectMessage(clientHandler.getUsername(), "Имя пользователя занято");
+        else {
+            authenticationProvider.changeNick(clientHandler, newUserName);
+            clientHandler.setUsername(newUserName);
+        }
     }
 }

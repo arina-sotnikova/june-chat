@@ -1,4 +1,4 @@
-package ru.otus.june.chat;
+package ru.otus.sotnikova.june.chat;
 
 import java.io.IOException;
 

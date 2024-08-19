@@ -1,4 +1,8 @@
-package ru.otus.june.chat.server;
+package ru.otus.sotnikova.june.chat.server.authenticator;
+
+import ru.otus.sotnikova.june.chat.server.ClientHandler;
+import ru.otus.sotnikova.june.chat.server.Server;
+import ru.otus.sotnikova.june.chat.server.UserRole;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -6,11 +10,12 @@ import java.util.List;
 public class InMemoryAuthenticationProvider implements AuthenticationProvider {
     private final Server server;
     private final List<User> users;
+    private final List<String> bannedUsers = new ArrayList<>();
 
     public InMemoryAuthenticationProvider(Server server) {
         this.server = server;
         this.users = new ArrayList<>();
-        this.users.add(new User("cat", "gomdode", "admin", UserRole.ADMIN));
+        this.users.add(new User("cat", "godmode", "admin", UserRole.ADMIN));
     }
 
     @Override
@@ -38,6 +43,27 @@ public class InMemoryAuthenticationProvider implements AuthenticationProvider {
     @Override
     public void initialize() {
         System.out.println("Сервис аутентификации запущен: In-Memory режим");
+    }
+
+    @Override
+    public boolean isBanned(String usernameToCheck) {
+        return bannedUsers.stream().anyMatch(user -> user.equals(usernameToCheck));
+    }
+
+    @Override
+    public void ban(String usernameToBan) {
+        if (!isBanned(usernameToBan))
+            bannedUsers.add(usernameToBan);
+        else
+            System.out.println("The user is already banned.");
+    }
+
+    @Override
+    public void changeNick(ClientHandler clientHandler, String newUsername) {
+        users.stream()
+                .filter(user -> user.username.equals(clientHandler.getUsername()))
+                .forEach(user -> user.setUsername(newUsername));
+        clientHandler.setUsername(newUsername);
     }
 
     private String getUsernameByLoginAndPassword(String login, String password) {
@@ -78,6 +104,10 @@ public class InMemoryAuthenticationProvider implements AuthenticationProvider {
             clientHandler.sendMessage("Указанная учетная запись уже занята");
             return false;
         }
+        if (isBanned(authUsername)) {
+            clientHandler.sendMessage("Этот пользователь забанен администратором");
+            return false;
+        }
         clientHandler.setUsername(authUsername);
         server.subscribe(clientHandler);
         clientHandler.sendMessage("/authok " + authUsername);
@@ -91,7 +121,7 @@ public class InMemoryAuthenticationProvider implements AuthenticationProvider {
     private class User {
         private final String login;
         private final String password;
-        private final String username;
+        private String username;
         private UserRole role = UserRole.USER;
 
         public User(String login, String password, String username) {
@@ -105,6 +135,10 @@ public class InMemoryAuthenticationProvider implements AuthenticationProvider {
             this.password = password;
             this.username = username;
             this.role = role;
+        }
+
+        public void setUsername(String newUsername) {
+            this.username = newUsername;
         }
     }
 }

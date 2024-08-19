@@ -1,9 +1,12 @@
-package ru.otus.june.chat.server;
+package ru.otus.sotnikova.june.chat.server;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -13,8 +16,12 @@ public class ClientHandler {
     private DataInputStream in;
     private DataOutputStream out;
     private String username;
+
+    private Thread handlerThread;
     private final Pattern DIRECT_MESSAGE_PATTERN = Pattern.compile("/w\\s(\\w+)\\s(.*)");
     private final Pattern KICK_PATTERN = Pattern.compile("/kick\\s(\\w+)");
+    private final Pattern BAN_PATTERN = Pattern.compile("/ban\\s(\\w+)");
+    private final Pattern CHANGE_NICK_PATTERN = Pattern.compile("/changenick\\s(\\w+)");
 
     public String getUsername() {
         return username;
@@ -29,7 +36,7 @@ public class ClientHandler {
         this.socket = socket;
         this.in = new DataInputStream(socket.getInputStream());
         this.out = new DataOutputStream(socket.getOutputStream());
-        new Thread(() -> {
+        this.handlerThread =  new Thread(() -> {
             try {
                 System.out.println("Подключился новый клиент");
                 while (true) {
@@ -69,21 +76,38 @@ public class ClientHandler {
                             sendMessage("/exitok");
                             server.broadcastMessage("Из чата вышел: " + this.getUsername());
                             break;
-                        } else if (message.startsWith("/w")) {
+                        } else if (message.startsWith("/w"))
                             handleDirectMessageCommand(message);
-                        } else if (message.startsWith("/kick") && server.getAuthenticationProvider().privilegeElevation(this)) {
+                        else if (message.startsWith("/kick") && server.getAuthenticationProvider().privilegeElevation(this))
                             handleKickCommand(message);
-                        }
+                        else if (message.startsWith("/shutdown") && server.getAuthenticationProvider().privilegeElevation(this))
+                            handleShutdownCommand();
+                        else if (message.startsWith("/activelist")) {
+                            String listOfActiveUsers = String.join(", ", handleActiveListCommand());
+                            server.sendDirectMessage(this.username, String.format("Список активных пользователей: %s", listOfActiveUsers));
+                        } else if (message.startsWith("/ban") && server.getAuthenticationProvider().privilegeElevation(this))
+                            handleBanCommand(message);
+                        else if (message.startsWith("/changenick"))
+                            handleChangeNickCommand(message);
                         continue;
                     }
-                    server.broadcastMessage(username + ": " + message);
+                    server.broadcastMessage(getMessageTimestampAsString() + " " + username + ": " + message);
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                throw new RuntimeException(e);
             } finally {
                 disconnect();
             }
-        }).start();
+        });
+    }
+
+    private String getMessageTimestampAsString() {
+        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"));
+    }
+
+    public void handle() {
+        handlerThread.setDaemon(true);
+        handlerThread.start();
     }
 
     public void sendMessage(String message) {
@@ -129,7 +153,7 @@ public class ClientHandler {
             if (matcher.find()) {
                 String receiverUserName = matcher.group(1);
                 String messageContents = matcher.group(2);
-                String formattedMessage = username + ": " + messageContents;
+                String formattedMessage = getMessageTimestampAsString() + " " + username + ": " + messageContents;
                 server.sendDirectMessage(receiverUserName, formattedMessage);
             }
         } else {
@@ -145,6 +169,40 @@ public class ClientHandler {
                 server.kickUser(userNameToKick);
             } else {
                 server.sendDirectMessage(this.username, "Невалидная команда исключения пользователя из чата");
+            }
+        }
+    }
+
+    private void handleShutdownCommand() {
+        server.shutdown();
+    }
+
+    private List<String> handleActiveListCommand() {
+        return server.getUserNames();
+    }
+
+    private void handleBanCommand(String command) {
+        if (validateCommand(BAN_PATTERN, command)) {
+            Matcher matcher = BAN_PATTERN.matcher(command);
+            if (matcher.find()) {
+                String userNameToBan = matcher.group(1);
+                server.sendDirectMessage(userNameToBan, "Вы были забанены администратором");
+                server.disconnectAndBan(userNameToBan);
+            } else {
+                server.sendDirectMessage(this.username, "Невалидная команда бана пользователя");
+            }
+        }
+    }
+
+    private void handleChangeNickCommand(String command) {
+        if (validateCommand(CHANGE_NICK_PATTERN, command)) {
+            Matcher matcher = CHANGE_NICK_PATTERN.matcher(command);
+            if (matcher.find()) {
+                String newUserName = matcher.group(1);
+                server.changeNickIfValid(this, newUserName);
+                server.sendDirectMessage(this.username, String.format("Имя пользователя изменено на %s", newUserName));
+            } else {
+                server.sendDirectMessage(this.username,"Невалидная команда смены ника");
             }
         }
     }
