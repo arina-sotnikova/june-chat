@@ -4,6 +4,8 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ClientHandler {
     private Server server;
@@ -11,6 +13,8 @@ public class ClientHandler {
     private DataInputStream in;
     private DataOutputStream out;
     private String username;
+    private final Pattern DIRECT_MESSAGE_PATTERN = Pattern.compile("/w\\s(\\w+)\\s(.*)");
+    private final Pattern KICK_PATTERN = Pattern.compile("/kick\\s(\\w+)");
 
     public String getUsername() {
         return username;
@@ -63,7 +67,12 @@ public class ClientHandler {
                     if (message.startsWith("/")) {
                         if (message.equals("/exit")) {
                             sendMessage("/exitok");
+                            server.broadcastMessage("Из чата вышел: " + this.getUsername());
                             break;
+                        } else if (message.startsWith("/w")) {
+                            handleDirectMessageCommand(message);
+                        } else if (message.startsWith("/kick") && server.getAuthenticationProvider().privilegeElevation(this)) {
+                            handleKickCommand(message);
                         }
                         continue;
                     }
@@ -107,6 +116,36 @@ public class ClientHandler {
             }
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    private boolean validateCommand(Pattern commandPattern, String command) {
+        return commandPattern.asMatchPredicate().test(command);
+    }
+
+    private void handleDirectMessageCommand(String command) {
+        if (validateCommand(DIRECT_MESSAGE_PATTERN, command)) {
+            Matcher matcher = DIRECT_MESSAGE_PATTERN.matcher(command);
+            if (matcher.find()) {
+                String receiverUserName = matcher.group(1);
+                String messageContents = matcher.group(2);
+                String formattedMessage = username + ": " + messageContents;
+                server.sendDirectMessage(receiverUserName, formattedMessage);
+            }
+        } else {
+            server.sendDirectMessage(this.username, "Невалидная команда отправки личного сообщения");
+        }
+    }
+
+    private void handleKickCommand(String command) {
+        if (validateCommand(KICK_PATTERN, command)) {
+            Matcher matcher = KICK_PATTERN.matcher(command);
+            if (matcher.find()) {
+                String userNameToKick = matcher.group(1);
+                server.kickUser(userNameToKick);
+            } else {
+                server.sendDirectMessage(this.username, "Невалидная команда исключения пользователя из чата");
+            }
         }
     }
 }
