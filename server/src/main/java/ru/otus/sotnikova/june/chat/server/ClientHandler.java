@@ -1,4 +1,4 @@
-package ru.otus.june.chat.server;
+package ru.otus.sotnikova.june.chat.server;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;

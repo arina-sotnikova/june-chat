@@ -1,7 +1,7 @@
-package ru.otus.june.chat.server;
+package ru.otus.sotnikova.june.chat.server;
 
-import ru.otus.june.chat.server.authenticator.AuthenticationProvider;
-import ru.otus.june.chat.server.authenticator.PersistentAuthenticationProvider;
+import ru.otus.sotnikova.june.chat.server.authenticator.AuthenticationProvider;
+import ru.otus.sotnikova.june.chat.server.authenticator.PersistentAuthenticationProvider;
 
 import java.io.IOException;
 import java.net.ServerSocket;

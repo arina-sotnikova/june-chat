@@ -1,6 +1,6 @@
-package ru.otus.june.chat.server.authenticator;
+package ru.otus.sotnikova.june.chat.server.authenticator;
 
-import ru.otus.june.chat.server.ClientHandler;
+import ru.otus.sotnikova.june.chat.server.ClientHandler;
 
 public interface AuthenticationProvider {
     void initialize();
